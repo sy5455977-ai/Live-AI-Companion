@@ -79,7 +79,7 @@ function Home() {
     }
   }, [chatHistory, sendMessageMutation.isPending]);
 
-  const expressions = ["bbt", "xxy", "y", "lh", "dyj", "h", "k"];
+  const expressions = ["bbt", "xxy", "lh", "y", "h", "k", "lzx", "mj", "sq", "wh", "dyj", "zs1"];
 
   return (
     <div className="flex flex-col md:flex-row h-[100dvh] w-full bg-background overflow-hidden relative dark">
