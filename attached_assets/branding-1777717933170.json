@@ -1,0 +1,187 @@
+{
+  "colorScheme": "light",
+  "fonts": [
+    {
+      "family": "Arial",
+      "role": "body"
+    },
+    {
+      "family": "Helvetica Neue",
+      "role": "body"
+    },
+    {
+      "family": "Segoe UI",
+      "role": "body"
+    },
+    {
+      "family": "Meiryo",
+      "role": "body"
+    },
+    {
+      "family": "ヒラギノ角ゴ ProN",
+      "role": "body"
+    }
+  ],
+  "colors": {
+    "primary": "#F7FFE9",
+    "secondary": "#7F8D9F",
+    "accent": "#DF5DA3",
+    "background": "#F7FFE9",
+    "textPrimary": "#000000",
+    "link": "#FF5C67"
+  },
+  "typography": {
+    "fontFamilies": {
+      "primary": "Arial",
+      "heading": "Arial"
+    },
+    "fontStacks": {
+      "heading": [
+        "-apple-system",
+        "BlinkMacSystemFont",
+        "Avenir",
+        "Helvetica Neue",
+        "Segoe UI",
+        "Arial",
+        "ヒラギノ角ゴ ProN",
+        "Hiragino Kaku Gothic ProN",
+        "メイリオ",
+        "Meiryo",
+        "ＭＳ Ｐゴシック",
+        "sans-serif"
+      ],
+      "body": [
+        "-apple-system",
+        "BlinkMacSystemFont",
+        "Avenir",
+        "Helvetica Neue",
+        "Segoe UI",
+        "Arial",
+        "ヒラギノ角ゴ ProN",
+        "Hiragino Kaku Gothic ProN",
+        "メイリオ",
+        "Meiryo",
+        "ＭＳ Ｐゴシック",
+        "sans-serif"
+      ],
+      "paragraph": [
+        "-apple-system",
+        "BlinkMacSystemFont",
+        "Avenir",
+        "Helvetica Neue",
+        "Segoe UI",
+        "Arial",
+        "ヒラギノ角ゴ ProN",
+        "Hiragino Kaku Gothic ProN",
+        "メイリオ",
+        "Meiryo",
+        "ＭＳ Ｐゴシック",
+        "sans-serif"
+      ]
+    },
+    "fontSizes": {
+      "h1": "36px",
+      "h2": "24px",
+      "body": "16px"
+    }
+  },
+  "spacing": {
+    "baseUnit": 8,
+    "borderRadius": "1px"
+  },
+  "components": {
+    "input": {
+      "background": "#EBEDF2",
+      "textColor": "#171D26",
+      "borderColor": "#D5D9DE",
+      "borderRadius": "5px",
+      "borderRadiusCorners": {
+        "topLeft": "5px",
+        "topRight": "0px",
+        "bottomRight": "0px",
+        "bottomLeft": "5px"
+      },
+      "shadow": "none"
+    },
+    "buttonPrimary": {
+      "background": "#DF5DA3",
+      "textColor": "#FFFFFF",
+      "borderRadius": "52.8px",
+      "borderRadiusCorners": {
+        "topLeft": "52.8px",
+        "topRight": "52.8px",
+        "bottomRight": "52.8px",
+        "bottomLeft": "52.8px"
+      },
+      "shadow": "none"
+    },
+    "buttonSecondary": {
+      "background": "#FF5C67",
+      "textColor": "#FFFFFF",
+      "borderRadius": "2px",
+      "borderRadiusCorners": {
+        "topLeft": "2px",
+        "topRight": "2px",
+        "bottomRight": "2px",
+        "bottomLeft": "2px"
+      },
+      "shadow": "none"
+    }
+  },
+  "images": {
+    "logo": "https://booth.pximg.net/c/48x48/users/14812630/icon_image/697bacb2-255f-45c7-aff5-acadf98d42f2_base_resized.jpg",
+    "favicon": "https://kyoki.booth.pm/static-images/pwa/icon_size_180.png",
+    "ogImage": "https://booth.pximg.net/c/620x620/5ea662ff-f1b5-4846-ae83-9cc682a9ef27/i/5576188/df51f6ab-865d-48c6-b70f-235c2debbfe3_base_resized.jpg",
+    "logoHref": "https://kyoki.booth.pm/",
+    "logoAlt": "kyokiStudio"
+  },
+  "__llm_logo_reasoning": {
+    "selectedIndex": 0,
+    "reasoning": "Selected #0 because it is in the header, visible, and links to the homepage, matching the brand 'kyokiStudio'.",
+    "confidence": 0.9,
+    "source": "llm"
+  },
+  "__llm_button_reasoning": {
+    "primary": {
+      "index": 0,
+      "text": "Free DownloadAlexia.zip (25.9 MB)",
+      "reasoning": "Button #0 has a vibrant background color (#DF5DA3) and action-oriented text ('Free DownloadAlexia.zip'), making it the primary CTA."
+    },
+    "secondary": {
+      "index": 2,
+      "text": "Follow",
+      "reasoning": "Button #2 has a different vibrant color (#FF5C67) and serves as a secondary action ('Follow'), fitting the secondary role."
+    },
+    "confidence": 0.95
+  },
+  "personality": {
+    "tone": "playful",
+    "energy": "high",
+    "targetAudience": "digital artists and creators"
+  },
+  "designSystem": {
+    "framework": "tailwind",
+    "componentLibrary": ""
+  },
+  "confidence": {
+    "buttons": 0.95,
+    "colors": 0.9,
+    "overall": 0.925
+  },
+  "__llm_metadata": {
+    "logoSelection": {
+      "llmCalled": true,
+      "llmSucceeded": true,
+      "finalSource": "llm",
+      "rawLogoSelection": {
+        "selectedLogoIndex": 0,
+        "selectedLogoReasoning": "Selected #0 because it is in the header, visible, and links to the homepage, matching the brand 'kyokiStudio'.",
+        "confidence": 0.9
+      }
+    },
+    "buttonClassification": {
+      "llmCalled": true,
+      "llmSucceeded": true
+    }
+  }
+}
