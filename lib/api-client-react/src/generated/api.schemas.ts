@@ -8,3 +8,33 @@
 export interface HealthStatus {
   status: string;
 }
+
+export type ChatMessageRole =
+  (typeof ChatMessageRole)[keyof typeof ChatMessageRole];
+
+export const ChatMessageRole = {
+  user: "user",
+  assistant: "assistant",
+} as const;
+
+export interface ChatMessage {
+  role: ChatMessageRole;
+  content: string;
+}
+
+export interface ChatRequest {
+  message: string;
+  history?: ChatMessage[];
+}
+
+export interface ChatResponse {
+  reply: string;
+  /** Expression name to play: bbt, dyj, h, k, lh, xxy, y, yf, yfmz, yjys1, yjys2, zs1, or null for default */
+  expression: string;
+  /** Detected emotion: happy, sad, surprised, angry, shy, excited, neutral */
+  emotion: string;
+}
+
+export interface ErrorResponse {
+  error: string;
+}

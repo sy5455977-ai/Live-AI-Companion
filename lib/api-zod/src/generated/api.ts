@@ -14,3 +14,33 @@ import * as zod from "zod";
 export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
+
+/**
+ * Send a chat message and get a response with expression hint
+ * @summary Send a message to Alexia AI
+ */
+export const SendMessageBody = zod.object({
+  message: zod.string(),
+  history: zod
+    .array(
+      zod.object({
+        role: zod.enum(["user", "assistant"]),
+        content: zod.string(),
+      }),
+    )
+    .optional(),
+});
+
+export const SendMessageResponse = zod.object({
+  reply: zod.string(),
+  expression: zod
+    .string()
+    .describe(
+      "Expression name to play: bbt, dyj, h, k, lh, xxy, y, yf, yfmz, yjys1, yjys2, zs1, or null for default",
+    ),
+  emotion: zod
+    .string()
+    .describe(
+      "Detected emotion: happy, sad, surprised, angry, shy, excited, neutral",
+    ),
+});
