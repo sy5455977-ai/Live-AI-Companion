@@ -49,6 +49,23 @@ ALWAYS pick an expression — never skip it.`;
 
 type ChatMsg = { role: "system" | "user" | "assistant"; content: string };
 
+// Pollinations AI — completely free, no API key needed, unlimited
+async function callPollinations(messages: ChatMsg[]): Promise<string> {
+  const res = await fetch("https://text.pollinations.ai/openai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "openai",
+      max_tokens: 256,
+      messages,
+      seed: Math.floor(Math.random() * 99999),
+    }),
+  });
+  if (!res.ok) throw new Error(`Pollinations error ${res.status}: ${await res.text()}`);
+  const data = await res.json() as { choices: Array<{ message: { content: string } }> };
+  return data.choices[0]?.message?.content ?? "...";
+}
+
 async function callGemini(messages: ChatMsg[]): Promise<string> {
   const key = process.env.GEMINI_API_KEY!;
   const res = await fetch(
@@ -69,11 +86,7 @@ async function callGroq(messages: ChatMsg[]): Promise<string> {
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
-      max_tokens: 256,
-      messages,
-    }),
+    body: JSON.stringify({ model: "llama-3.3-70b-versatile", max_tokens: 256, messages }),
   });
   if (!res.ok) throw new Error(`Groq error ${res.status}: ${await res.text()}`);
   const data = await res.json() as { choices: Array<{ message: { content: string } }> };
@@ -140,12 +153,19 @@ router.post("/chat", async (req, res): Promise<void> => {
   try {
     let rawReply: string;
 
-    if (process.env.GROQ_API_KEY) {
-      rawReply = await callGroq(messages);
-    } else if (process.env.GEMINI_API_KEY) {
-      rawReply = await callGemini(messages);
-    } else {
-      rawReply = await callReplitAI(messages);
+    // Pollinations first — free, unlimited, no key needed
+    // Falls back to Groq → Gemini → Replit AI if available
+    try {
+      rawReply = await callPollinations(messages);
+    } catch (pollinationsErr) {
+      req.log.warn({ err: pollinationsErr }, "Pollinations failed, trying fallback");
+      if (process.env.GROQ_API_KEY) {
+        rawReply = await callGroq(messages);
+      } else if (process.env.GEMINI_API_KEY) {
+        rawReply = await callGemini(messages);
+      } else {
+        rawReply = await callReplitAI(messages);
+      }
     }
 
     const { reply, expression, emotion } = parseResponse(rawReply);
