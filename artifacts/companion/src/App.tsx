@@ -45,35 +45,42 @@ function Home() {
     window.speechSynthesis.cancel();
 
     const utter = new SpeechSynthesisUtterance(text);
-    utter.rate = 1.05;
-    utter.pitch = 1.4;
+    utter.rate = 1.0;
+    utter.pitch = 1.35;
     utter.volume = 1.0;
 
-    const loadVoice = () => {
+    const pickVoice = (voices: SpeechSynthesisVoice[]) => {
+      // Priority: Google UK English Female → Google US English Female → any Google female → any English female
+      return (
+        voices.find(v => /google uk english female/i.test(v.name)) ||
+        voices.find(v => /google us english female/i.test(v.name)) ||
+        voices.find(v => /google.*female/i.test(v.name)) ||
+        voices.find(v => /zira|samantha|victoria|karen|moira|fiona|tessa/i.test(v.name)) ||
+        voices.find(v => /female|woman|girl/i.test(v.name)) ||
+        voices.find(v => v.lang.startsWith("en-")) ||
+        voices[0]
+      );
+    };
+
+    const doSpeak = () => {
       const voices = window.speechSynthesis.getVoices();
-      const preferred = voices.find(v =>
-        /zira|samantha|victoria|karen|moira|fiona|tessa|google.*uk.*female|google.*us.*female/i.test(v.name)
-      ) || voices.find(v =>
-        /female|woman|girl|susan/i.test(v.name)
-      ) || voices.find(v => v.lang.startsWith("en")) || voices[0];
-      if (preferred) utter.voice = preferred;
+      const voice = pickVoice(voices);
+      if (voice) utter.voice = voice;
+      const estimatedDuration = Math.max((text.length / 12) * 1000, 1500);
+      animateMouth(estimatedDuration);
+      utter.onend = () => {
+        if (talkingTimerRef.current) clearInterval(talkingTimerRef.current);
+        setMouthValue(0);
+      };
+      speechRef.current = utter;
+      window.speechSynthesis.speak(utter);
     };
 
     if (window.speechSynthesis.getVoices().length > 0) {
-      loadVoice();
+      doSpeak();
     } else {
-      window.speechSynthesis.onvoiceschanged = loadVoice;
+      window.speechSynthesis.onvoiceschanged = () => doSpeak();
     }
-
-    const estimatedDuration = Math.max((text.length / 12) * 1000, 1500);
-    animateMouth(estimatedDuration);
-
-    utter.onend = () => {
-      if (talkingTimerRef.current) clearInterval(talkingTimerRef.current);
-      setMouthValue(0);
-    };
-    speechRef.current = utter;
-    window.speechSynthesis.speak(utter);
   }, [voiceEnabled, animateMouth]);
 
   const handleExpression = useCallback((expr: string | null) => {
@@ -99,6 +106,12 @@ function Home() {
           speak(response.reply);
           setLastReply(response.reply);
           setChatHistory(prev => [...prev, { role: "assistant", content: response.reply }]);
+        },
+        onError: () => {
+          const errMsg = "Abhi mujhe setup karna baaki hai babe 🙈 Pehle GEMINI_API_KEY add karo Secrets mein!";
+          setLastReply(errMsg);
+          handleExpression("h");
+          setChatHistory(prev => [...prev, { role: "assistant", content: errMsg }]);
         },
       }
     );

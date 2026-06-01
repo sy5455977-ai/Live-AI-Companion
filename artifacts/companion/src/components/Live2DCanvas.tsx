@@ -30,6 +30,19 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
     const container = containerRef.current;
     let destroyed = false;
 
+    // Snapshot screen size at load — prevent keyboard-open glitch on mobile
+    // Only resize when WIDTH changes, not height (keyboard causes height-only change)
+    const initialW = window.innerWidth;
+    const initialH = window.screen.height; // use screen height, not viewport height
+    const W = initialW;
+    const H = initialH;
+
+    // Set canvas size explicitly — don't use resizeTo (avoids keyboard-open glitch)
+    canvas.width = W * (window.devicePixelRatio || 1);
+    canvas.height = H * (window.devicePixelRatio || 1);
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+
     let app: PIXI.Application | null = null;
     try {
       app = new PIXI.Application({
@@ -40,7 +53,9 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
         antialias: true,
         autoDensity: true,
         resolution: window.devicePixelRatio || 1,
-        resizeTo: container,
+        width: W,
+        height: H,
+        // NO resizeTo — we handle it manually to avoid keyboard glitch
       });
     } catch {
       setError("WebGL is not supported. Please open in Chrome/Firefox/Safari.");
@@ -49,21 +64,15 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
     }
     appRef.current = app;
 
-    // Position model: bigger, centered, show full body
-    const positionModel = (model: Live2DModel) => {
-      if (!app || destroyed) return;
-      const res = app.renderer.resolution || 1;
-      const W = app.view.width / res;
-      const H = app.view.height / res;
+    const positionModel = (model: Live2DModel, w: number, h: number) => {
+      if (destroyed) return;
       model.anchor.set(0.5, 0);
-      model.x = W / 2;
+      model.x = w / 2;
       model.y = 0;
-      // Scale to fill height fully — bigger than before
-      const scaleByH = H / model.height;
-      const scaleByW = W / model.width;
-      // Use larger of the two to make model bigger, constrained to width
-      const scale = Math.min(scaleByH * 1.0, scaleByW * 1.15);
-      model.scale.set(scale);
+      // Fill height fully — model takes up full screen
+      const scaleH = h / model.height;
+      const scaleW = w / model.width;
+      model.scale.set(Math.min(scaleH, scaleW * 1.1));
     };
 
     Live2DModel.from(modelUrl, { autoInteract: false })
@@ -71,15 +80,29 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
         if (destroyed) { model.destroy(); return; }
         modelRef.current = model;
         app!.stage.addChild(model as unknown as PIXI.DisplayObject);
-        positionModel(model);
+        positionModel(model, W, H);
 
-        const onResize = () => positionModel(model);
-        app!.renderer.on("resize", onResize);
+        // Only reposition on width change (ignore height-only keyboard open)
+        let lastWidth = W;
+        const onResize = () => {
+          const newW = window.innerWidth;
+          if (Math.abs(newW - lastWidth) > 30) {
+            lastWidth = newW;
+            const newH = window.screen.height;
+            canvas.width = newW * (window.devicePixelRatio || 1);
+            canvas.height = newH * (window.devicePixelRatio || 1);
+            canvas.style.width = newW + "px";
+            canvas.style.height = newH + "px";
+            try { app!.renderer.resize(newW, newH); } catch {}
+            positionModel(model, newW, newH);
+          }
+        };
+        window.addEventListener("resize", onResize);
 
         // Try idle motion
         try { model.motion("", 0, 2); } catch {}
 
-        // Natural blinking every 3-6s
+        // Blinking every 3-6s
         const blinkInterval = setInterval(() => {
           if (destroyed) { clearInterval(blinkInterval); return; }
           const m = modelRef.current;
@@ -104,12 +127,10 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
           const m = modelRef.current;
           if (!m) return;
           breathT += 0.012;
-          try {
-            getCoreModel(m).setParameterValueById("ParamBreath", (Math.sin(breathT) + 1) / 2);
-          } catch {}
+          try { getCoreModel(m).setParameterValueById("ParamBreath", (Math.sin(breathT) + 1) / 2); } catch {}
         }, 30);
 
-        // Subtle idle body sway
+        // Subtle body sway
         let swayT = 0;
         const swayTimer = setInterval(() => {
           if (destroyed) { clearInterval(swayTimer); return; }
@@ -123,17 +144,14 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
           } catch {}
         }, 30);
 
-        // Occasional head tilt
-        let headTiltT = 0;
-        const headTiltTimer = setInterval(() => {
-          if (destroyed) { clearInterval(headTiltTimer); return; }
+        // Head tilt
+        let headT = 0;
+        const headTimer = setInterval(() => {
+          if (destroyed) { clearInterval(headTimer); return; }
           const m = modelRef.current;
           if (!m) return;
-          headTiltT += 0.006;
-          try {
-            const c = getCoreModel(m);
-            c.setParameterValueById("ParamAngleZ", Math.sin(headTiltT * 1.3) * 4);
-          } catch {}
+          headT += 0.006;
+          try { getCoreModel(m).setParameterValueById("ParamAngleZ", Math.sin(headT * 1.3) * 4); } catch {}
         }, 30);
 
         setLoading(false);
@@ -142,8 +160,8 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
           clearInterval(blinkInterval);
           clearInterval(breathTimer);
           clearInterval(swayTimer);
-          clearInterval(headTiltTimer);
-          app?.renderer.off("resize", onResize);
+          clearInterval(headTimer);
+          window.removeEventListener("resize", onResize);
         };
       })
       .catch((e) => {
@@ -186,7 +204,7 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
     };
   }, [modelUrl]);
 
-  // Expression — fix: try expression by name, fall back gracefully
+  // Expression — set by AI, reset to index 0 on null
   useEffect(() => {
     const m = modelRef.current;
     if (!m) return;
@@ -194,7 +212,6 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
       if (expression) {
         m.expression(expression);
       } else {
-        // Reset to default
         m.expression(0);
       }
     } catch {
@@ -238,7 +255,7 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
           <div>Loading Alexia...</div>
         </div>
       )}
-      <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
+      <canvas ref={canvasRef} style={{ display: "block", position: "absolute", top: 0, left: 0 }} />
     </div>
   );
 }
