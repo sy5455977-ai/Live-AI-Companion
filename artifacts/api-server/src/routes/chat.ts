@@ -64,6 +64,22 @@ async function callGemini(messages: ChatMsg[]): Promise<string> {
   return data.choices[0]?.message?.content ?? "...";
 }
 
+async function callGroq(messages: ChatMsg[]): Promise<string> {
+  const key = process.env.GROQ_API_KEY!;
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model: "llama-3.3-70b-versatile",
+      max_tokens: 256,
+      messages,
+    }),
+  });
+  if (!res.ok) throw new Error(`Groq error ${res.status}: ${await res.text()}`);
+  const data = await res.json() as { choices: Array<{ message: { content: string } }> };
+  return data.choices[0]?.message?.content ?? "...";
+}
+
 async function callReplitAI(messages: ChatMsg[]): Promise<string> {
   const completion = await replitOpenAI.chat.completions.create({
     model: "gpt-5-mini",
@@ -124,7 +140,9 @@ router.post("/chat", async (req, res): Promise<void> => {
   try {
     let rawReply: string;
 
-    if (process.env.GEMINI_API_KEY) {
+    if (process.env.GROQ_API_KEY) {
+      rawReply = await callGroq(messages);
+    } else if (process.env.GEMINI_API_KEY) {
       rawReply = await callGemini(messages);
     } else {
       rawReply = await callReplitAI(messages);
