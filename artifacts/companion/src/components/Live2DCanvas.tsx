@@ -8,8 +8,6 @@ const getCoreModel = (m: Live2DModel): CubismCore =>
 
 Live2DModel.registerTicker(PIXI.Ticker);
 
-// App background colour — must be solid so Live2D multiply-blend layers render correctly
-// (transparent canvas causes multiply blend to output black: color × 0 = 0)
 const BG_COLOR = 0x0d0a1a;
 
 interface Live2DCanvasProps {
@@ -37,8 +35,6 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
       app = new PIXI.Application({
         view: canvas,
         autoStart: true,
-        // KEY FIX: solid background so Live2D multiply-blend layers have a real colour to
-        // multiply against. Transparent (0,0,0,0) background makes colour × alpha = black.
         backgroundColor: BG_COLOR,
         backgroundAlpha: 1,
         antialias: true,
@@ -53,15 +49,20 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
     }
     appRef.current = app;
 
+    // Position model: bigger, centered, show full body
     const positionModel = (model: Live2DModel) => {
       if (!app || destroyed) return;
       const res = app.renderer.resolution || 1;
       const W = app.view.width / res;
       const H = app.view.height / res;
-      model.anchor.set(0.5, 0.5);
+      model.anchor.set(0.5, 0);
       model.x = W / 2;
-      model.y = H * 0.52;
-      const scale = Math.min(W / model.width, H / model.height) * 0.92;
+      model.y = 0;
+      // Scale to fill height fully — bigger than before
+      const scaleByH = H / model.height;
+      const scaleByW = W / model.width;
+      // Use larger of the two to make model bigger, constrained to width
+      const scale = Math.min(scaleByH * 1.0, scaleByW * 1.15);
       model.scale.set(scale);
     };
 
@@ -75,17 +76,17 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
         const onResize = () => positionModel(model);
         app!.renderer.on("resize", onResize);
 
-        // Play built-in idle motion
+        // Try idle motion
         try { model.motion("", 0, 2); } catch {}
 
-        // Blinking every 3-5 s
+        // Natural blinking every 3-6s
         const blinkInterval = setInterval(() => {
           if (destroyed) { clearInterval(blinkInterval); return; }
           const m = modelRef.current;
           if (!m) return;
           let t = 0;
           const blinkTimer = setInterval(() => {
-            t += 0.15;
+            t += 0.18;
             const v = t < 0.5 ? 1 - t * 2 : (t - 0.5) * 2;
             try {
               const c = getCoreModel(m);
@@ -93,8 +94,8 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
               c.setParameterValueById("ParamEyeROpen", Math.max(0, Math.min(1, v)));
             } catch {}
             if (t >= 1) clearInterval(blinkTimer);
-          }, 30);
-        }, 3000 + Math.random() * 2000);
+          }, 25);
+        }, 3000 + Math.random() * 3000);
 
         // Breathing
         let breathT = 0;
@@ -102,9 +103,36 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
           if (destroyed) { clearInterval(breathTimer); return; }
           const m = modelRef.current;
           if (!m) return;
-          breathT += 0.015;
+          breathT += 0.012;
           try {
             getCoreModel(m).setParameterValueById("ParamBreath", (Math.sin(breathT) + 1) / 2);
+          } catch {}
+        }, 30);
+
+        // Subtle idle body sway
+        let swayT = 0;
+        const swayTimer = setInterval(() => {
+          if (destroyed) { clearInterval(swayTimer); return; }
+          const m = modelRef.current;
+          if (!m) return;
+          swayT += 0.008;
+          try {
+            const c = getCoreModel(m);
+            c.setParameterValueById("ParamBodyAngleZ", Math.sin(swayT) * 2.5);
+            c.setParameterValueById("ParamBodyAngleY", Math.sin(swayT * 0.7) * 1.5);
+          } catch {}
+        }, 30);
+
+        // Occasional head tilt
+        let headTiltT = 0;
+        const headTiltTimer = setInterval(() => {
+          if (destroyed) { clearInterval(headTiltTimer); return; }
+          const m = modelRef.current;
+          if (!m) return;
+          headTiltT += 0.006;
+          try {
+            const c = getCoreModel(m);
+            c.setParameterValueById("ParamAngleZ", Math.sin(headTiltT * 1.3) * 4);
           } catch {}
         }, 30);
 
@@ -113,6 +141,8 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
         return () => {
           clearInterval(blinkInterval);
           clearInterval(breathTimer);
+          clearInterval(swayTimer);
+          clearInterval(headTiltTimer);
           app?.renderer.off("resize", onResize);
         };
       })
@@ -123,7 +153,7 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
         }
       });
 
-    // Pointer tracking (mouse + touch)
+    // Pointer/touch tracking
     const handlePointer = (cx: number, cy: number) => {
       const m = modelRef.current;
       if (!m) return;
@@ -156,11 +186,20 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
     };
   }, [modelUrl]);
 
-  // Expression
+  // Expression — fix: try expression by name, fall back gracefully
   useEffect(() => {
     const m = modelRef.current;
     if (!m) return;
-    try { expression ? m.expression(expression) : m.expression(""); } catch {}
+    try {
+      if (expression) {
+        m.expression(expression);
+      } else {
+        // Reset to default
+        m.expression(0);
+      }
+    } catch {
+      try { m.expression(0); } catch {}
+    }
   }, [expression]);
 
   // Lip sync
@@ -176,7 +215,7 @@ export function Live2DCanvas({ modelUrl, expression, mouthValue = 0 }: Live2DCan
         width: "100%", height: "100%", display: "flex", alignItems: "center",
         justifyContent: "center", flexDirection: "column",
         color: "rgba(255,255,255,0.4)", fontSize: "14px", gap: "12px",
-        padding: "24px", textAlign: "center",
+        padding: "24px", textAlign: "center", background: `#${BG_COLOR.toString(16).padStart(6, "0")}`,
       }}>
         <div style={{ fontSize: "40px", opacity: 0.3 }}>✦</div>
         <div>Alexia is resting...</div>

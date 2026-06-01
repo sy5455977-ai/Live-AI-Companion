@@ -6,8 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useSendMessage } from "@workspace/api-client-react";
 import { Live2DCanvas } from "@/components/Live2DCanvas";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Send, Loader2, Volume2, VolumeX } from "lucide-react";
+import { Volume2, VolumeX, Mic, MicOff, Send, Video, Play } from "lucide-react";
 import NotFound from "@/pages/not-found";
 import type { ChatMessage } from "@workspace/api-client-react";
 
@@ -19,14 +18,15 @@ function Home() {
   const [expression, setExpression] = useState<string | null>(null);
   const [mouthValue, setMouthValue] = useState(0);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [lastReply, setLastReply] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
   const talkingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const expressionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const sendMessageMutation = useSendMessage();
 
-  // Animate mouth while speaking
   const animateMouth = useCallback((durationMs: number) => {
     let t = 0;
     if (talkingTimerRef.current) clearInterval(talkingTimerRef.current);
@@ -40,24 +40,31 @@ function Home() {
     }, durationMs);
   }, []);
 
-  // Speak text using browser TTS + animate mouth
   const speak = useCallback((text: string) => {
     if (!voiceEnabled || !window.speechSynthesis) return;
     window.speechSynthesis.cancel();
 
     const utter = new SpeechSynthesisUtterance(text);
-    utter.rate = 1.0;
-    utter.pitch = 1.3;
+    utter.rate = 1.05;
+    utter.pitch = 1.4;
     utter.volume = 1.0;
 
-    // Try to pick a female voice
-    const voices = window.speechSynthesis.getVoices();
-    const femaleVoice = voices.find(v =>
-      /female|woman|girl|zira|susan|samantha|victoria|karen|moira|fiona|tessa/i.test(v.name)
-    ) || voices.find(v => v.lang.startsWith("en")) || voices[0];
-    if (femaleVoice) utter.voice = femaleVoice;
+    const loadVoice = () => {
+      const voices = window.speechSynthesis.getVoices();
+      const preferred = voices.find(v =>
+        /zira|samantha|victoria|karen|moira|fiona|tessa|google.*uk.*female|google.*us.*female/i.test(v.name)
+      ) || voices.find(v =>
+        /female|woman|girl|susan/i.test(v.name)
+      ) || voices.find(v => v.lang.startsWith("en")) || voices[0];
+      if (preferred) utter.voice = preferred;
+    };
 
-    // Estimate duration from text length (avg ~12 chars/sec speaking)
+    if (window.speechSynthesis.getVoices().length > 0) {
+      loadVoice();
+    } else {
+      window.speechSynthesis.onvoiceschanged = loadVoice;
+    }
+
     const estimatedDuration = Math.max((text.length / 12) * 1000, 1500);
     animateMouth(estimatedDuration);
 
@@ -73,15 +80,13 @@ function Home() {
     setExpression(expr);
     if (expressionTimerRef.current) clearTimeout(expressionTimerRef.current);
     if (expr) {
-      expressionTimerRef.current = setTimeout(() => setExpression(null), 7000);
+      expressionTimerRef.current = setTimeout(() => setExpression(null), 8000);
     }
   }, []);
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    if (!userInput.trim() || sendMessageMutation.isPending) return;
-
-    const newUserMsg: ChatMessage = { role: "user", content: userInput.trim() };
+  const sendMessage = useCallback((text: string) => {
+    if (!text.trim() || sendMessageMutation.isPending) return;
+    const newUserMsg: ChatMessage = { role: "user", content: text.trim() };
     const currentHistory = [...chatHistory];
     setChatHistory([...currentHistory, newUserMsg]);
     setUserInput("");
@@ -92,20 +97,57 @@ function Home() {
         onSuccess: (response) => {
           handleExpression(response.expression || null);
           speak(response.reply);
+          setLastReply(response.reply);
           setChatHistory(prev => [...prev, { role: "assistant", content: response.reply }]);
         },
       }
     );
+  }, [chatHistory, sendMessageMutation, handleExpression, speak]);
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    sendMessage(userInput);
   };
 
-  // Auto-scroll chat
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [chatHistory, sendMessageMutation.isPending]);
+  // Voice input (speech recognition)
+  const handleMicToggle = useCallback(() => {
+    type SR = {
+      new(): {
+        lang: string;
+        interimResults: boolean;
+        maxAlternatives: number;
+        onresult: ((e: { results: { [k: number]: { [k: number]: { transcript: string } } } }) => void) | null;
+        onerror: (() => void) | null;
+        onend: (() => void) | null;
+        start(): void;
+      };
+    };
+    const win = window as typeof window & { SpeechRecognition?: SR; webkitSpeechRecognition?: SR };
+    const SpeechRecognition = win.SpeechRecognition || win.webkitSpeechRecognition;
 
-  // Cleanup speech on unmount
+    if (!SpeechRecognition) {
+      alert("Speech recognition is not supported in this browser.");
+      return;
+    }
+    if (isListening) {
+      setIsListening(false);
+      return;
+    }
+    setIsListening(true);
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setIsListening(false);
+      sendMessage(transcript);
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+    recognition.start();
+  }, [isListening, sendMessage]);
+
   useEffect(() => {
     return () => {
       window.speechSynthesis?.cancel();
@@ -114,161 +156,188 @@ function Home() {
     };
   }, []);
 
-  const expressions = [
-    { id: "bbt", label: "Cute" },
-    { id: "xxy", label: "Star ★" },
-    { id: "lh", label: "Blush" },
-    { id: "wh", label: "Wink" },
-    { id: "y", label: "Dizzy" },
-    { id: "h", label: "Sweat" },
-    { id: "k", label: "Cry" },
-    { id: "lzx", label: "Smirk" },
-    { id: "mj", label: "Cool" },
-    { id: "sq", label: "Soft" },
-    { id: "dyj", label: "Glasses" },
-    { id: "zs1", label: "Pose" },
-  ];
+  const lastUserMsg = [...chatHistory].reverse().find(m => m.role === "user");
 
   return (
-    <div className="flex flex-col md:flex-row h-[100dvh] w-full bg-background overflow-hidden relative dark">
-      {/* Ambient background glows */}
+    <div className="relative h-[100dvh] w-full overflow-hidden dark" style={{ background: "#0d0a1a" }}>
+      {/* Ambient glows */}
       <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-15%] left-[-10%] w-[50%] h-[50%] rounded-full bg-purple-900/20 blur-[140px]" />
-        <div className="absolute bottom-[-15%] right-[20%] w-[40%] h-[40%] rounded-full bg-pink-900/15 blur-[120px]" />
-        <div className="absolute top-[30%] right-[-5%] w-[25%] h-[35%] rounded-full bg-indigo-900/15 blur-[100px]" />
+        <div className="absolute top-[-10%] left-[-5%] w-[55%] h-[55%] rounded-full opacity-30" style={{ background: "radial-gradient(circle, #5b21b6 0%, transparent 70%)", filter: "blur(80px)" }} />
+        <div className="absolute bottom-[-10%] right-[10%] w-[45%] h-[45%] rounded-full opacity-20" style={{ background: "radial-gradient(circle, #7c3aed 0%, transparent 70%)", filter: "blur(100px)" }} />
       </div>
 
-      {/* ── LEFT: Avatar panel ── */}
-      <div className="flex-1 relative z-10 h-[58dvh] md:h-full flex flex-col min-w-0">
-        {/* Header */}
-        <div className="absolute top-4 left-4 z-20 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full overflow-hidden border border-purple-500/30 shadow-[0_0_12px_rgba(168,85,247,0.3)]">
-            <img src="/favicon.svg" alt="Alexia" className="w-full h-full object-cover bg-card" />
+      {/* ── HEADER ── */}
+      <div className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-4 pt-4 pb-2">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-full flex items-center justify-center text-xl border-2 shadow-lg" style={{ background: "linear-gradient(135deg, #4c1d95, #6d28d9)", borderColor: "rgba(167,139,250,0.4)" }}>
+            🐱
           </div>
           <div>
-            <h1 className="text-base font-bold tracking-tight text-white/90">Alexia</h1>
-            <p className="text-[11px] text-purple-300/80 font-medium">AI Companion</p>
+            <div className="flex items-center gap-2">
+              <span className="text-white font-bold text-base tracking-tight">Alexia</span>
+              <span className="w-2 h-2 rounded-full bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.8)]" />
+            </div>
+            <span className="text-xs font-medium" style={{ color: "rgba(196,181,253,0.7)" }}>AI Companion</span>
           </div>
         </div>
 
-        {/* Voice toggle */}
         <button
           onClick={() => {
             setVoiceEnabled(v => !v);
             if (voiceEnabled) window.speechSynthesis?.cancel();
           }}
-          className="absolute top-4 right-4 z-20 p-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 transition-all"
+          className="w-10 h-10 rounded-full flex items-center justify-center border transition-all"
+          style={{ background: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.12)" }}
           title={voiceEnabled ? "Mute voice" : "Enable voice"}
         >
           {voiceEnabled
-            ? <Volume2 className="w-4 h-4 text-purple-300/80" />
-            : <VolumeX className="w-4 h-4 text-white/30" />
+            ? <Volume2 className="w-4 h-4" style={{ color: "rgba(196,181,253,0.8)" }} />
+            : <VolumeX className="w-4 h-4" style={{ color: "rgba(255,255,255,0.3)" }} />
           }
         </button>
-
-        {/* Live2D canvas */}
-        <div className="flex-1 w-full h-full relative">
-          <Live2DCanvas
-            modelUrl="/models/Alexia/Alexia.model3.json"
-            expression={expression}
-            mouthValue={mouthValue}
-          />
-        </div>
-
-        {/* Expression buttons */}
-        <div className="absolute bottom-4 left-3 right-3 z-20 flex gap-1.5 flex-wrap justify-center">
-          {expressions.map(({ id, label }) => (
-            <button
-              key={id}
-              onClick={() => handleExpression(expression === id ? null : id)}
-              className={`px-2.5 py-1 text-[10px] font-semibold rounded-full border transition-all backdrop-blur-sm cursor-pointer tracking-wide ${
-                expression === id
-                  ? "bg-purple-500/40 border-purple-400/60 text-purple-100"
-                  : "bg-black/30 border-white/10 text-white/50 hover:bg-purple-900/30 hover:border-purple-500/40 hover:text-purple-200"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
       </div>
 
-      {/* ── RIGHT: Chat panel ── */}
-      <div className="w-full md:w-[380px] lg:w-[440px] h-[42dvh] md:h-full flex flex-col bg-black/40 backdrop-blur-xl border-t md:border-t-0 md:border-l border-white/8 z-10 shadow-[-8px_0_40px_rgba(0,0,0,0.3)]">
-        <div className="px-4 py-3 border-b border-white/8 flex items-center justify-between">
-          <h2 className="text-xs font-semibold tracking-widest text-white/40 uppercase">Whispers</h2>
-          {sendMessageMutation.isPending && (
-            <div className="flex items-center gap-1.5 text-xs text-purple-300/80">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              <span>Alexia is thinking...</span>
-            </div>
-          )}
-        </div>
+      {/* ── AVATAR (full screen) ── */}
+      <div className="absolute inset-0 z-10">
+        <Live2DCanvas
+          modelUrl="/models/Alexia/Alexia.model3.json"
+          expression={expression}
+          mouthValue={mouthValue}
+        />
+      </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-5" ref={scrollRef}>
-          {chatHistory.length === 0 && (
-            <div className="h-full flex flex-col items-center justify-center text-center gap-4 opacity-40">
-              <div className="w-14 h-14 rounded-full bg-purple-900/40 flex items-center justify-center border border-purple-500/20">
-                <Send className="w-5 h-5 text-purple-300/70" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-white/70">Say hello to Alexia</p>
-                <p className="text-xs mt-1 text-white/40 max-w-[200px]">She's listening and ready to chat with you.</p>
-              </div>
-            </div>
-          )}
+      {/* ── BOTTOM OVERLAY ── */}
+      <div className="absolute bottom-0 left-0 right-0 z-20 flex flex-col" style={{ paddingBottom: "env(safe-area-inset-bottom, 12px)" }}>
 
-          {chatHistory.map((msg, idx) => (
+        {/* Chat bubble - Alexia's last reply */}
+        {(lastReply || sendMessageMutation.isPending) && (
+          <div className="px-4 pb-3">
             <div
-              key={idx}
-              className={`flex flex-col max-w-[86%] ${msg.role === "user" ? "ml-auto items-end" : "mr-auto items-start"}`}
+              className="rounded-2xl px-4 py-3 text-sm leading-relaxed max-w-[90%]"
+              style={{
+                background: "rgba(13,10,26,0.82)",
+                backdropFilter: "blur(20px)",
+                border: "1px solid rgba(139,92,246,0.2)",
+                color: "rgba(255,255,255,0.92)",
+              }}
             >
-              <span className="text-[9px] text-white/25 mb-1 px-1 font-medium uppercase tracking-widest">
-                {msg.role === "user" ? "You" : "Alexia"}
-              </span>
-              <div
-                className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm ${
-                  msg.role === "user"
-                    ? "bg-purple-600/25 text-white/90 border border-purple-500/25 rounded-tr-sm"
-                    : "bg-white/8 text-white/85 border border-white/10 rounded-tl-sm"
-                }`}
-              >
-                {msg.content}
-              </div>
+              {sendMessageMutation.isPending ? (
+                <span className="flex items-center gap-1.5" style={{ color: "rgba(196,181,253,0.7)" }}>
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+                </span>
+              ) : (
+                lastReply
+              )}
             </div>
-          ))}
+          </div>
+        )}
 
-          {sendMessageMutation.isPending && (
-            <div className="flex flex-col max-w-[86%] mr-auto items-start">
-              <span className="text-[9px] text-white/25 mb-1 px-1 font-medium uppercase tracking-widest">Alexia</span>
-              <div className="px-4 py-3 rounded-2xl bg-white/8 border border-white/10 rounded-tl-sm flex items-center gap-1.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-purple-400/70 animate-bounce" style={{ animationDelay: "0ms" }} />
-                <div className="w-1.5 h-1.5 rounded-full bg-purple-400/70 animate-bounce" style={{ animationDelay: "150ms" }} />
-                <div className="w-1.5 h-1.5 rounded-full bg-purple-400/70 animate-bounce" style={{ animationDelay: "300ms" }} />
-              </div>
+        {/* User last message bubble */}
+        {lastUserMsg && !sendMessageMutation.isPending && (
+          <div className="px-4 pb-2 flex justify-end">
+            <div
+              className="rounded-2xl px-4 py-2 text-sm max-w-[75%]"
+              style={{
+                background: "rgba(109,40,217,0.85)",
+                backdropFilter: "blur(12px)",
+                color: "rgba(255,255,255,0.95)",
+              }}
+            >
+              {lastUserMsg.content}
             </div>
-          )}
+          </div>
+        )}
+
+        {/* Control buttons row */}
+        <div className="flex items-center justify-center gap-5 pb-3 pt-1">
+          <button
+            className="w-12 h-12 rounded-2xl flex items-center justify-center border transition-all active:scale-95"
+            style={{ background: "rgba(255,255,255,0.08)", borderColor: "rgba(255,255,255,0.12)" }}
+            title="Video (coming soon)"
+          >
+            <Video className="w-5 h-5" style={{ color: "rgba(255,255,255,0.6)" }} />
+          </button>
+
+          <button
+            onClick={() => {
+              setVoiceEnabled(v => !v);
+              if (voiceEnabled) window.speechSynthesis?.cancel();
+            }}
+            className="w-12 h-12 rounded-2xl flex items-center justify-center border transition-all active:scale-95"
+            style={{ background: "rgba(255,255,255,0.08)", borderColor: "rgba(255,255,255,0.12)" }}
+            title={voiceEnabled ? "Mute" : "Unmute"}
+          >
+            {voiceEnabled
+              ? <Volume2 className="w-5 h-5" style={{ color: "rgba(255,255,255,0.6)" }} />
+              : <VolumeX className="w-5 h-5" style={{ color: "rgba(255,255,255,0.3)" }} />
+            }
+          </button>
+
+          <button
+            onClick={handleMicToggle}
+            className="w-16 h-16 rounded-full flex items-center justify-center border-2 transition-all active:scale-95 shadow-lg"
+            style={{
+              background: isListening
+                ? "linear-gradient(135deg, #7c3aed, #9f1fe8)"
+                : "linear-gradient(135deg, #6d28d9, #7c3aed)",
+              borderColor: isListening ? "rgba(196,181,253,0.6)" : "rgba(139,92,246,0.5)",
+              boxShadow: isListening ? "0 0 24px rgba(124,58,237,0.7)" : "0 0 16px rgba(109,40,217,0.4)",
+            }}
+            title={isListening ? "Listening..." : "Speak"}
+          >
+            {isListening
+              ? <Mic className="w-7 h-7 text-white animate-pulse" />
+              : <Mic className="w-7 h-7 text-white" />
+            }
+          </button>
+
+          <button
+            onClick={() => sendMessage(userInput || "Continue...")}
+            disabled={sendMessageMutation.isPending}
+            className="w-12 h-12 rounded-2xl flex items-center justify-center border transition-all active:scale-95 disabled:opacity-30"
+            style={{ background: "rgba(255,255,255,0.08)", borderColor: "rgba(255,255,255,0.12)" }}
+            title="Send"
+          >
+            <Play className="w-5 h-5" style={{ color: "rgba(255,255,255,0.6)" }} />
+          </button>
         </div>
 
-        <div className="p-3 border-t border-white/8 bg-black/20">
-          <form onSubmit={handleSubmit} className="flex items-center gap-2">
-            <Input
-              value={userInput}
-              onChange={e => setUserInput(e.target.value)}
-              placeholder="Whisper something to Alexia..."
-              className="flex-1 bg-white/5 border-white/10 focus-visible:ring-purple-500/30 focus-visible:border-purple-500/40 h-11 rounded-full text-sm pl-4 pr-3 placeholder:text-white/20 text-white/80"
-              disabled={sendMessageMutation.isPending}
-            />
-            <Button
-              type="submit"
-              size="icon"
-              disabled={!userInput.trim() || sendMessageMutation.isPending}
-              className="h-11 w-11 shrink-0 rounded-full bg-purple-600/40 hover:bg-purple-600/60 text-purple-200 border border-purple-500/30 transition-all hover:scale-105 active:scale-95 disabled:opacity-30"
-            >
-              <Send className="h-4 w-4 ml-0.5" />
-            </Button>
-          </form>
-        </div>
+        {/* Input field */}
+        <form onSubmit={handleSubmit} className="flex items-center gap-2 px-4 pb-4">
+          <input
+            ref={inputRef}
+            value={userInput}
+            onChange={e => setUserInput(e.target.value)}
+            placeholder="Ask Anything..."
+            disabled={sendMessageMutation.isPending}
+            className="flex-1 h-12 rounded-2xl px-4 text-sm outline-none transition-all"
+            style={{
+              background: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              color: "rgba(255,255,255,0.85)",
+              caretColor: "#a78bfa",
+            }}
+            onFocus={e => {
+              (e.target as HTMLInputElement).style.borderColor = "rgba(139,92,246,0.5)";
+            }}
+            onBlur={e => {
+              (e.target as HTMLInputElement).style.borderColor = "rgba(255,255,255,0.1)";
+            }}
+          />
+          <button
+            type="submit"
+            disabled={!userInput.trim() || sendMessageMutation.isPending}
+            className="w-12 h-12 rounded-full flex items-center justify-center transition-all active:scale-95 disabled:opacity-30"
+            style={{
+              background: "linear-gradient(135deg, #6d28d9, #7c3aed)",
+              boxShadow: "0 0 12px rgba(109,40,217,0.4)",
+            }}
+          >
+            <Send className="w-4 h-4 text-white ml-0.5" />
+          </button>
+        </form>
       </div>
     </div>
   );
